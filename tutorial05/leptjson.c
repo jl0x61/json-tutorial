@@ -8,6 +8,7 @@
 #include <math.h>    /* HUGE_VAL */
 #include <stdlib.h>  /* NULL, malloc(), realloc(), free(), strtod() */
 #include <string.h>  /* memcpy() */
+#include <stdio.h>
 
 #ifndef LEPT_PARSE_STACK_INIT_SIZE
 #define LEPT_PARSE_STACK_INIT_SIZE 256
@@ -184,9 +185,10 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
 static int lept_parse_value(lept_context* c, lept_value* v);
 
 static int lept_parse_array(lept_context* c, lept_value* v) {
-    size_t size = 0;
+    size_t size = 0, i;
     int ret;
     EXPECT(c, '[');
+    lept_parse_whitespace(c);
     if (*c->json == ']') {
         c->json++;
         v->type = LEPT_ARRAY;
@@ -197,10 +199,12 @@ static int lept_parse_array(lept_context* c, lept_value* v) {
     for (;;) {
         lept_value e;
         lept_init(&e);
-        if ((ret = lept_parse_value(c, &e)) != LEPT_PARSE_OK)
-            return ret;
+        lept_parse_whitespace(c);
+        if ((ret = lept_parse_value(c, &e)) != LEPT_PARSE_OK) 
+            break;
         memcpy(lept_context_push(c, sizeof(lept_value)), &e, sizeof(lept_value));
         size++;
+        lept_parse_whitespace(c);
         if (*c->json == ',')
             c->json++;
         else if (*c->json == ']') {
@@ -209,11 +213,17 @@ static int lept_parse_array(lept_context* c, lept_value* v) {
             v->u.a.size = size;
             size *= sizeof(lept_value);
             memcpy(v->u.a.e = (lept_value*)malloc(size), lept_context_pop(c, size), size);
+            lept_parse_whitespace(c);
             return LEPT_PARSE_OK;
         }
-        else
-            return LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+        else {
+            ret = LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            break;
+        }
     }
+    for (i = 0; i < size; i++)
+        lept_free((lept_value*)lept_context_pop(c, sizeof(lept_value)));
+    return ret;
 }
 
 static int lept_parse_value(lept_context* c, lept_value* v) {
@@ -253,6 +263,12 @@ void lept_free(lept_value* v) {
     assert(v != NULL);
     if (v->type == LEPT_STRING)
         free(v->u.s.s);
+    if (v->type == LEPT_ARRAY) {
+        size_t i;
+        for(i=0; i<v->u.a.size; ++i) 
+            lept_free(v->u.a.e + i);
+        free(v->u.a.e);
+    }
     v->type = LEPT_NULL;
 }
 
